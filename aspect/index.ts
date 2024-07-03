@@ -20,18 +20,37 @@ class Aspect implements IPreContractCallJP {
      */
     preContractCall(input: PreContractCallInput): void {
         // read the throttle config from the properties and decode
+        const intervel = sys.aspect.property.get<u64>("intervel");
+        const limit = sys.aspect.property.get<u64>("limit");
 
         // get the contract address, from address and build the storage prefix
+        const contractAddress = uint8ArrayToHex(input.call!.to);
+        const from = uint8ArrayToHex(input.call!.from); 
+        const storagePrefix = `${contractAddress}:${from}`;
 
         // load the current block timestamp
+        const blockTimeBytes = sys.hostApi.runtimeContext.get("block.header.timestamp");
+        const blockTime = Protobuf.decode<UintData>(blockTimeBytes, UintData.decode).data;
 
         // load last execution timestamp
+        const lastExecState = sys.aspect.mutableState.get<u64>(storagePrefix + "lastExecAt");
+        const lastExec = lastExecState.unwrap();
 
         // check if the throttle interval has passed, revert if not
+        if(lastExec > 0 && (blockTime - lastExec) < intervel) {
+            sys.revert("throttled"); 
+        }
 
         // check if the throttle limit has been reached, revert if so
+        const execTimesState = sys.aspect.mutableState.get<u64>(storagePrefix + "execTimes");
+        const execTimes = execTimesState.unwrap();
+        if(limit && execTimes >= limit) {
+            sys.revert("execution time exceeded"); 
+        }
 
         // update the throttle state
+        execTimesState.set(execTimes + 1);
+        lastExecState.set(blockTime);
     }
 
     /**
@@ -42,7 +61,7 @@ class Aspect implements IPreContractCallJP {
      * @param sender address of the transaction
      * @return true if check success, false if check fail
      */
-    isOwner(sender: Uint8Array): bool {
+    isOwner(sender: Uint8Array): boolean {
         return false;
     }
 }
